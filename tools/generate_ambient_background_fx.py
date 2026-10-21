@@ -2,7 +2,7 @@
 """Generate and embed animated background smoke and atmospheric sprite strips.
 
 Run: python tools/generate_ambient_background_fx.py
-Requires Pillow. Writes assets/ambient_smoke.png and assets/ambient_motes.png,
+Requires Pillow. Writes assets/ambient_smoke.png and assets/ambient_embers.png,
 then embeds them in index.html so the game still runs offline as a single-file PWA.
 """
 from __future__ import annotations
@@ -17,11 +17,11 @@ from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE_OUT = ROOT / "assets" / "ambient_smoke.png"
-MOTE_OUT = ROOT / "assets" / "ambient_motes.png"
+EMBER_OUT = ROOT / "assets" / "ambient_embers.png"
 SMOKE_W, SMOKE_H = 28, 32
 SMOKE_FRAMES = 8
-MOTE_CELL = 10
-MOTE_FRAMES = 8
+EMBER_CELL = 12
+EMBER_FRAMES = 8
 UPSCALE = 3
 
 
@@ -89,37 +89,57 @@ def smoke_frame(frame: int) -> Image.Image:
     return rgba.resize((SMOKE_W, SMOKE_H), Image.Resampling.LANCZOS)
 
 
-def mote_frame(frame: int) -> Image.Image:
-    """A tiny neon ember/firefly that pulses and changes hue through its loop."""
-    size = MOTE_CELL * UPSCALE
+def ember_frame(frame: int) -> Image.Image:
+    """A flying fire fragment with a jagged tail and an all-warm flicker loop."""
+    size = EMBER_CELL * UPSCALE
     scale = UPSCALE
-    colors = [
-        (255, 177, 91), (255, 221, 132), (115, 231, 255), (255, 192, 105),
-        (255, 126, 91), (129, 220, 255), (205, 151, 255), (255, 219, 133),
+    phase = frame * math.tau / EMBER_FRAMES
+    palette = [
+        (255, 101, 32), (255, 148, 43), (255, 211, 91), (244, 84, 27),
+        (255, 183, 55), (255, 231, 133), (235, 91, 30), (255, 137, 37),
     ]
-    color = colors[frame]
-    pulse = (0.56, 0.76, 1.0, 0.82, 0.60, 0.84, 1.0, 0.75)[frame]
+    color = palette[frame]
+    pulse = (0.62, 0.78, 1.0, 0.72, 0.56, 0.92, 0.68, 0.86)[frame]
+    cx = 6 * scale + int(round(math.sin(phase) * 0.38 * scale))
+    cy = 6 * scale + int(round(math.cos(phase) * 0.32 * scale))
+
+    # Amber/red bloom remains small so the flying debris reads as hot pixels,
+    # not neon orbs. The sharper core is composited above the soft halo.
     glow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glow)
-    c = size / 2
-    gd.ellipse((c - 2.1 * scale, c - 2.1 * scale,
-                c + 2.1 * scale, c + 2.1 * scale),
-               fill=(*color, int(100 * pulse)))
-    glow = glow.filter(ImageFilter.GaussianBlur(1.25 * scale))
+    radius = (2.5 + 0.25 * math.sin(phase)) * scale
+    gd.ellipse((cx - radius, cy - radius, cx + radius, cy + radius),
+               fill=(255, 99, 26, int(104 * pulse)))
+    glow = glow.filter(ImageFilter.GaussianBlur(1.15 * scale))
 
     art = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(art)
-    cx = 5 * scale + int(round(math.sin(frame * math.tau / MOTE_FRAMES) * 0.45 * scale))
-    cy = 5 * scale + int(round(math.cos(frame * math.tau / MOTE_FRAMES) * 0.35 * scale))
-    bright = tuple(min(255, int(ch + (255 - ch) * 0.55)) for ch in color)
-    d.rectangle((cx - scale, cy - scale, cx + scale, cy + scale), fill=(*color, int(220 * pulse)))
-    d.point((cx, cy), fill=(*bright, int(255 * pulse)))
-    # A short pixel tail rotates, so a moving mote feels like an ember in air.
-    tails = [(-2, 1), (-2, 0), (-1, -2), (0, -2), (2, -1), (2, 0), (1, 2), (0, 2)]
-    tx, ty = tails[frame]
-    d.point((cx + tx * scale // 2, cy + ty * scale // 2), fill=(*color, int(160 * pulse)))
+    # Rotate a crooked shard and its broken tail through a restrained arc.
+    angle = -0.7 + 0.25 * math.sin(phase)
+    def rotate_point(x: float, y: float) -> tuple[int, int]:
+        dx, dy = x * scale, y * scale
+        return (int(round(cx + dx * math.cos(angle) - dy * math.sin(angle))),
+                int(round(cy + dx * math.sin(angle) + dy * math.cos(angle))))
+
+    shard = [(-2.0, 1.0), (-0.4, -2.0), (2.0, -0.7), (1.0, 0.8),
+             (2.1, 2.0), (-0.6, 1.3)]
+    d.polygon([rotate_point(x, y) for x, y in shard], fill=(*color, int(238 * pulse)))
+    hot = (255, 241, 177, int(255 * pulse))
+    d.point(rotate_point(0, 0), fill=hot)
+    d.point(rotate_point(0.8, -0.35), fill=(255, 214, 100, int(248 * pulse)))
+
+    # A broken, tapered trail and two tiny flecks sell airborne fire debris.
+    tail = [(-3.1, 2.4), (-3.8, 3.2), (-4.7, 3.1), (-3.7, 2.1)]
+    d.polygon([rotate_point(x, y) for x, y in tail], fill=(255, 105, 31, int(205 * pulse)))
+    d.point(rotate_point(-4.7, 3.1), fill=(255, 190, 75, int(210 * pulse)))
+    flick_x = 3.7 + 0.45 * math.sin(phase + 1.0)
+    flick_y = -2.7 + 0.4 * math.cos(phase)
+    d.point(rotate_point(flick_x, flick_y), fill=(255, 159, 48, int(195 * pulse)))
+    if frame in (1, 4, 7):
+        d.point(rotate_point(-2.6, 0.0), fill=(255, 224, 120, int(220 * pulse)))
+
     glow.alpha_composite(art)
-    return glow.resize((MOTE_CELL, MOTE_CELL), Image.Resampling.LANCZOS)
+    return glow.resize((EMBER_CELL, EMBER_CELL), Image.Resampling.LANCZOS)
 
 
 def make_strip(cell_w: int, cell_h: int, frames: int, draw_frame) -> Image.Image:
@@ -143,30 +163,32 @@ def embed_asset(source: str, key: str, image: Image.Image) -> str:
 
 def main() -> None:
     smoke = make_strip(SMOKE_W, SMOKE_H, SMOKE_FRAMES, smoke_frame)
-    motes = make_strip(MOTE_CELL, MOTE_CELL, MOTE_FRAMES, mote_frame)
+    embers = make_strip(EMBER_CELL, EMBER_CELL, EMBER_FRAMES, ember_frame)
     SMOKE_OUT.parent.mkdir(parents=True, exist_ok=True)
     smoke.save(SMOKE_OUT, optimize=True)
-    motes.save(MOTE_OUT, optimize=True)
+    embers.save(EMBER_OUT, optimize=True)
 
     html = ROOT / "index.html"
     source = html.read_text()
     source = embed_asset(source, "ambient_smoke", smoke)
-    source = embed_asset(source, "ambient_motes", motes)
+    source = embed_asset(source, "ambient_embers", embers)
     source = re.sub(r"\n  SPR\.ambient_smoke = \{[^\n]*\};", "", source)
+    source = re.sub(r"\n  SPR\.ambient_embers = \{[^\n]*\};", "", source)
+    source = re.sub(r"\n  ASSETS\.ambient_motes = 'data:image/png;base64,[^']+';", "", source)
     source = re.sub(r"\n  SPR\.ambient_motes = \{[^\n]*\};", "", source)
-    marker = "  ASSETS.ambient_motes = 'data:image/png;base64,"
+    marker = "  ASSETS.ambient_embers = 'data:image/png;base64,"
     pos = source.find(marker)
     if pos < 0:
-        raise SystemExit("Could not find embedded ambient mote sprite")
+        raise SystemExit("Could not find embedded ambient ember sprite")
     end = source.find("';", pos) + 2
     metadata = (
         "\n  SPR.ambient_smoke = { img: 'ambient_smoke', kind: 'fx', cw: 28, ch: 32, frames: 8, fps: 7, loop: true, ax: 14, ay: 30 };"
-        "\n  SPR.ambient_motes = { img: 'ambient_motes', kind: 'fx', cw: 10, ch: 10, frames: 8, fps: 9, loop: true, ax: 5, ay: 5 };"
+        "\n  SPR.ambient_embers = { img: 'ambient_embers', kind: 'fx', cw: 12, ch: 12, frames: 8, fps: 10, loop: true, ax: 6, ay: 6 };"
     )
     source = source[:end] + metadata + source[end:]
     html.write_text(source)
     print(f"Wrote {SMOKE_OUT.relative_to(ROOT)} ({smoke.width}x{smoke.height})")
-    print(f"Wrote {MOTE_OUT.relative_to(ROOT)} ({motes.width}x{motes.height})")
+    print(f"Wrote {EMBER_OUT.relative_to(ROOT)} ({embers.width}x{embers.height})")
     print("Embedded both animated sprite strips in index.html")
 
 
