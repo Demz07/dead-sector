@@ -791,17 +791,6 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     }
   }
 
-  // A low, forward-leaning firing pose sells a combat slide without replacing
-  // the operative's class-specific sprite or changing movement physics.
-  function drawCharSlide(sprite, anim, frame, x, feetY, flip, leanDir) {
-    ctx.save();
-    ctx.translate(Math.round(x), Math.round(feetY));
-    ctx.rotate((leanDir || 1) * 0.09);
-    ctx.scale(1.08, 0.86);
-    drawChar(sprite, anim, frame, 0, 0, flip);
-    ctx.restore();
-  }
-
   // FX strips store their anchor in the un-mirrored frame; when the effect is
   // flipped the anchor has to mirror across the cell too, otherwise a muzzle
   // flash authored at x=0 (right in un-mirrored space) would land a whole
@@ -1251,10 +1240,14 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     if (!od) p.mag--;
     p.fireCd = (1 / wpn.rate) * (od ? 0.48 : 1);
     p.muzzle = 0.06;
-    p.frame = 0;
+    // Keep the locomotion cycle running when firing on the move; reset only
+    // the stationary shooting animation to its first firing frame.
+    if (p.anim !== 'walk' && p.anim !== 'run') p.frame = 0;
     p.shots++;
     var dir = p.facing;
-    var mz = muzzleWorld('shoot', 0);      // frame 0 = the pose that fires
+    var movingAnim = p.anim === 'walk' || p.anim === 'run';
+    var shotAnim = movingAnim ? p.anim : 'shoot';
+    var mz = muzzleWorld(shotAnim, movingAnim ? p.frame : 0);
     var mx = mz.x, my = mz.y;
     var speed = od ? 660 : 560;
     var pellets = Math.max(1, wpn.pellets | 0);
@@ -1275,7 +1268,7 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     addFx('muzzle_flash', mx + dir * 1, my, dir < 0);
     addFx('muzzle_smoke', mx + dir * 2, my - 1, dir < 0);
     // brass: ejected from the receiver port, kicked by the bolt + muzzle blast
-    var pe = playerPort('shoot', 0);
+    var pe = playerPort(shotAnim, movingAnim ? p.frame : 0);
     addCasing(pe.x, pe.y, -dir, wpn.kick || 1);
     if (pellets > 1) for (var cs = 0; cs < 2; cs++) addCasing(mx - dir * 9, my - 3, -dir, wpn.kick);
     // High-rate Overdrive and fully-tuned weapons feel powerful without turning
@@ -1941,14 +1934,21 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
 
     // animation state
     var moving = Math.abs(moveDir) > 0;
-    // While strafing and firing, keep the gun-up shooting pose but lean/squash
-    // it into a low combat slide instead of letting the feet look like a walk.
-    p.slideFire = !!(wantFire && p.mag > 0 && (moving || Math.abs(p.vx) > 24) &&
-                     p.reloading <= 0 && p.hurtT <= 0);
+    var coasting = Math.abs(p.vx) > 24;
+    var firing = p.muzzle > 0 || (wantFire && p.mag > 0);
     if (p.hurtT <= 0) {
       if (p.reloading > 0) { p.state = 'reload'; p.anim = 'reload'; p.frame += dt * 9; }
-      else if (p.muzzle > 0 || (wantFire && p.mag > 0)) {
-        if (p.state !== 'shoot') { p.state = 'shoot'; p.frame = 0; }
+      else if (firing && (moving || coasting)) {
+        // Keep cycling the walking/running sprite while firing; shots and
+        // muzzle effects remain active, but the feet never switch to a slide.
+        var moveAnim = sprint && moving ? 'run' : 'walk';
+        if (p.anim !== moveAnim) p.frame = 0;
+        p.state = 'shoot';
+        p.anim = moveAnim;
+        p.frame += dt * (moveAnim === 'run' ? 13 : 10);
+      } else if (firing) {
+        if (p.anim !== 'shoot') p.frame = 0;
+        p.state = 'shoot';
         p.anim = 'shoot'; p.frame += dt * 14;
       } else {
         p.state = 'idle';
@@ -1968,15 +1968,14 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     // ---- billowing cloud-of-dust trail anchored to the boot sole of the current frame
     var foot = feetWorld(p.anim, p.frame);
     var fast = sprint && moving;
-    var slidingFire = p.slideFire && Math.abs(p.vx) > 24;
     if (p.dodgeT > 0 || moving) {
       dustT -= dt;
       if (dustT <= 0) {
-        dustT = p.dodgeT > 0 ? 0.045 : (slidingFire ? 0.065 : (fast ? 0.085 : 0.145));
-        var sc = p.dodgeT > 0 ? 1.2 : (slidingFire ? 1.16 : (fast ? 1.08 : 0.94));
-        addFx('walk_dust', foot.x - p.facing * (slidingFire ? 5 : 2), foot.y, p.facing < 0, sc);
-        if (p.dodgeT > 0 || slidingFire || (fast && Math.random() < 0.45)) {
-          addFx('dust', foot.x - p.facing * (slidingFire ? 10 : 6), foot.y - 1, p.facing < 0, slidingFire ? 1.05 : 0.9);
+        dustT = p.dodgeT > 0 ? 0.045 : (fast ? 0.085 : 0.145);
+        var sc = p.dodgeT > 0 ? 1.2 : (fast ? 1.08 : 0.94);
+        addFx('walk_dust', foot.x - p.facing * 2, foot.y, p.facing < 0, sc);
+        if (p.dodgeT > 0 || (fast && Math.random() < 0.45)) {
+          addFx('dust', foot.x - p.facing * 6, foot.y - 1, p.facing < 0, 0.9);
         }
       }
     } else {
@@ -1985,9 +1984,6 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     if (p.dodgeT > 0) {
       addPart(foot.x + rnd(-2, 2), foot.y - rnd(0, 3), -p.dodgeDir * rnd(20, 65),
               rnd(-24, -4), rnd(0.25, 0.48), '#b0a482', 1, 130, 0);
-    } else if (slidingFire && Math.random() < dt * 16) {
-      addPart(foot.x - p.facing * rnd(5, 12), foot.y - 1, -p.facing * rnd(28, 76), rnd(-28, -8),
-              rnd(0.28, 0.44), '#aaa087', 1, 100, 0);
     } else if (moving && Math.random() < dt * (sprint ? 14 : 8)) {
       addPart(foot.x - p.facing * 2, foot.y - 1, rnd(-12, 12) - p.facing * 14, rnd(-24, -7),
               0.36, sprint ? '#b4a688' : '#948870', 1, 90, 0);
@@ -2595,9 +2591,7 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
       var psx = screenX(player.x);
       var blink = player.invuln > 0 && Math.floor(STATE.t * 20) % 2 === 0;
       if (!blink) {
-        if (player.slideFire) drawCharSlide(PKEY, player.anim, player.frame, psx, GY,
-                                           player.facing < 0, player.facing);
-        else drawChar(PKEY, player.anim, player.frame, psx, GY, player.facing < 0);
+        drawChar(PKEY, player.anim, player.frame, psx, GY, player.facing < 0);
         if (player.invuln > 0) {
           drawCharTinted(PKEY, player.anim, player.frame, psx, GY,
                          player.facing < 0, 1, 0.16 + 0.14 * Math.sin(STATE.t * 26));
