@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate and embed a four-frame pixel-art bird flock sprite sheet.
+"""Generate and embed tiny, stick-like animated bird sprites.
 
 Run: python tools/generate_ambient_birds.py
 Requires Pillow. Writes assets/ambient_birds.png and embeds the PNG in index.html
@@ -16,47 +16,28 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ambient_birds.png"
-CELL_W, CELL_H, FRAMES = 24, 18, 4
+CELL_W, CELL_H, FRAMES = 10, 7, 4
 
 
 def bird_frame(frame: int) -> Image.Image:
     image = Image.new("RGBA", (CELL_W, CELL_H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
 
-    # Paired wings flap through a clear high / glide / low / glide cycle.
-    tip_y = (1, 4, 9, 4)[frame]
-    shoulder_y = (8, 8, 9, 8)[frame]
-    left_wing = [
-        (11, shoulder_y), (9, tip_y + 3), (6, tip_y), (7, tip_y + 6),
-        (2, tip_y + 3), (5, 11), (9, 14)
-    ]
-    right_wing = [
-        (12, shoulder_y), (15, tip_y + 3), (18, tip_y), (17, tip_y + 6),
-        (22, tip_y + 3), (19, 11), (15, 14)
-    ]
-    wing = (34, 43, 54, 255)
-    inner = (71, 91, 103, 255)
-    glint = (137, 176, 183, 230)
-    draw.polygon(left_wing, fill=wing)
-    draw.polygon(right_wing, fill=wing)
-    # Feather streaks and a couple of cool rim pixels keep the silhouette legible.
-    if frame in (0, 1, 3):
-        draw.line([(5, tip_y + 3), (9, shoulder_y + 1)], fill=inner, width=1)
-        draw.line([(14, shoulder_y + 1), (19, tip_y + 3)], fill=inner, width=1)
-        draw.point((5, tip_y + 2), fill=glint)
-        draw.point((18, tip_y + 2), fill=glint)
-    else:
-        draw.line([(5, 12), (9, 10)], fill=inner, width=1)
-        draw.line([(14, 10), (19, 12)], fill=inner, width=1)
-
-    # Body, lifted head, eye glint, tail feathers and bright beak read clearly at game scale.
-    draw.polygon([(8, 9), (10, 7), (14, 7), (17, 9), (15, 12), (12, 14), (9, 12)],
-                 fill=(25, 31, 40, 255))
-    draw.ellipse((13, 5, 17, 9), fill=(39, 49, 60, 255))
-    draw.point((16, 6), fill=(173, 208, 202, 255))
-    draw.polygon([(17, 7), (21, 8), (17, 9)], fill=(255, 185, 88, 255))
-    draw.polygon([(9, 9), (5, 6), (7, 10), (4, 13), (10, 12)], fill=(30, 39, 49, 255))
-    draw.line([(10, 9), (13, 9)], fill=(111, 145, 154, 255), width=1)
+    # A single-pixel M/V silhouette cycles through four wing positions.
+    # Keep the design deliberately close to the game's original stick birds.
+    poses = (
+        [(0, 4), (2, 2), (4, 3), (5, 3), (7, 2), (9, 4)],
+        [(0, 3), (2, 3), (4, 4), (5, 4), (7, 3), (9, 3)],
+        [(0, 2), (2, 4), (4, 3), (5, 3), (7, 4), (9, 2)],
+        [(0, 3), (2, 1), (4, 2), (5, 2), (7, 1), (9, 3)],
+    )
+    pose = poses[frame]
+    ink = (57, 55, 63, 255)
+    draw.line(pose[:3], fill=ink, width=1)
+    draw.line(pose[3:], fill=ink, width=1)
+    # Tiny center pixel gives the chevron a bird-like body without extra detail.
+    draw.point((4, pose[2][1]), fill=(75, 73, 81, 255))
+    draw.point((5, pose[3][1]), fill=(75, 73, 81, 255))
     return image
 
 
