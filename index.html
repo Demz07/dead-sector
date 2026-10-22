@@ -2567,28 +2567,60 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     }
   }
 
+  // Adaptive ambient detail: lower decorative draw counts on slow devices,
+  // while keeping the gameplay-critical sprites and simulation unchanged.
+  var PERF = { frameMs: 16.7, slowFrames: 0, fastFrames: 0, ambientTier: 0 };
+  function samplePerformance(frameMs) {
+    if (document.hidden || !isFinite(frameMs) || frameMs <= 0) return;
+    PERF.frameMs += (frameMs - PERF.frameMs) * 0.12;
+    if (PERF.frameMs > 22) {
+      PERF.slowFrames++;
+      PERF.fastFrames = 0;
+      if (PERF.slowFrames >= 10 && PERF.ambientTier < 2) {
+        PERF.ambientTier++;
+        PERF.slowFrames = 0;
+      }
+    } else if (PERF.frameMs < 18) {
+      PERF.fastFrames++;
+      PERF.slowFrames = 0;
+      if (PERF.fastFrames >= 120 && PERF.ambientTier > 0) {
+        PERF.ambientTier--;
+        PERF.fastFrames = 0;
+      }
+    } else {
+      PERF.slowFrames = Math.max(0, PERF.slowFrames - 1);
+      PERF.fastFrames = 0;
+    }
+  }
+  function ambientCount(count) {
+    if (PERF.ambientTier === 1) return Math.max(1, Math.ceil(count * 0.75));
+    if (PERF.ambientTier >= 2) return Math.max(1, Math.ceil(count * 0.52));
+    return count;
+  }
+
   // Draw one frame from a Python-generated transparent ambient sprite strip.
   function drawAmbientSprite(name, frame, x, y, scale, alpha) {
     var s = SPR[name];
     if (!s || !ready(s.img)) return;
     var f = ((frame | 0) % s.frames + s.frames) % s.frames;
-    var w = s.cw * scale, h = s.ch * scale;
-    ctx.save();
+    var w = s.cw * scale, h = s.ch * scale, oldAlpha = ctx.globalAlpha;
     ctx.globalAlpha = alpha;
     ctx.drawImage(IMG[s.img], f * s.cw, 0, s.cw, s.ch,
                   Math.round(x - s.ax * scale), Math.round(y - s.ay * scale), w, h);
-    ctx.restore();
+    ctx.globalAlpha = oldAlpha;
   }
 
   // Smokestacks now use a looping, eight-pose sprite plume. Each puff has its
   // own phase and rise path, so the skyline feels alive rather than tiled.
   function drawAmbientSmoke() {
     if (!ready('ambient_smoke')) return;
-    for (var c = 0; c < 5; c++) {
+    var stacks = PERF.ambientTier === 0 ? 5 : PERF.ambientTier === 1 ? 4 : 3;
+    var puffsPerStack = PERF.ambientTier === 0 ? 5 : PERF.ambientTier === 1 ? 4 : 3;
+    for (var c = 0; c < stacks; c++) {
       var worldX = c * 151 + 62;
       var sx = ((worldX - STATE.camera * 0.45 + 80) % (VW + 180) + VW + 180) % (VW + 180) - 70;
       var baseY = 108 + (c % 3) * 5;
-      for (var p = 0; p < 5; p++) {
+      for (var p = 0; p < puffsPerStack; p++) {
         var rise = (STATE.t * 3.3 + c * 8.1 + p * 6.2) % 31;
         var sway = Math.sin(STATE.t * 0.75 + c * 2 + p * 0.8) * (2 + rise * 0.11);
         var frame = Math.floor(STATE.t * 7 + c * 1.7 + p * 1.3) % 8;
@@ -2626,14 +2658,16 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
   function drawAmbientBirds() {
     if (!ready('ambient_birds')) return;
     var cellW = 10, cellH = 7;
-    for (var f = 0; f < 3; f++) {
+    var flocks = PERF.ambientTier >= 2 ? 2 : 3;
+    var birdsPerFlock = PERF.ambientTier === 0 ? 3 : 2;
+    for (var f = 0; f < flocks; f++) {
       var dir = f === 1 ? -1 : 1;
       var travel = (STATE.t * (12 + f * 4) + f * 151) % (VW + 54);
       var leadX = dir > 0 ? travel - 27 : VW + 27 - travel;
       var baseY = 18 + f * 13 + Math.sin(STATE.t * 1.2 + f) * 2;
       var birdScale = 0.90 + f * 0.13;
       var dw = cellW * birdScale, dh = cellH * birdScale;
-      for (var b = 0; b < 3; b++) {
+      for (var b = 0; b < birdsPerFlock; b++) {
         var x = leadX - dir * b * (dw * 0.82);
         var y = baseY + Math.sin(STATE.t * 2.6 + f + b) * 1.2 + (b % 2);
         var frame = Math.floor(STATE.t * 8 + f * 1.7 + b * 1.15) % 4;
@@ -2664,11 +2698,11 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     tileLayer('bg_' + key + '_fog', 0.24, -t * 16, 98, 0.4);
     tileFrame('bg_' + key + '_lights_sky', 0.15, 0, 0.92);
     drawAmbientBirds();
-    drawAmbientEmbers(0.15, 11, 3, 22, 48, 0.47);
+    drawAmbientEmbers(0.15, ambientCount(11), 3, 22, 48, 0.47);
     // mid: near skyline with its own switching windows; smoke and motes drift above it
     tileLayer('bg_' + key + '_mid', 0.45);
     drawAmbientSmoke();
-    drawAmbientEmbers(0.45, 7, 24, 62, 42, 0.31);
+    drawAmbientEmbers(0.45, ambientCount(7), 24, 62, 42, 0.31);
     tileFrame('bg_' + key + '_lights_mid', 0.45, 0, 0.92);
     // distant aircraft warning lights crossing the skyline (its own animation)
     for (var bi = 0; bi < beacons.length; bi++) {
@@ -2948,7 +2982,9 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
   var last = performance.now(), acc = 0;
   function frame(t) {
     requestAnimationFrame(frame);
-    var dt = Math.min(0.05, (t - last) / 1000);
+    var frameMs = t - last;
+    samplePerformance(frameMs);
+    var dt = Math.min(0.05, frameMs / 1000);
     last = t;
     acc += dt;
     var step = 1 / 60;
@@ -3010,7 +3046,7 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
      * continuous ground contact with squash-and-settle (a body that comes to
        rest stops jittering and is flagged `asleep`)
      * wind / barrel-blast impulses and simple 2-body repulsion for gibs
-     * fixed 120 Hz substeps for stability at any frame rate
+     * up to 120 Hz substeps; cosmetic physics drops to 60 Hz if frame timing slows
 
    Units are world pixels + seconds; GY is the ground line.
    =========================================================================== */
@@ -3030,7 +3066,7 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
   };
 
   var P = [];                          // live bodies
-  var PMAX = 460;
+  var PMAX = 360;
 
   function physAdd(o) {
     var m = MAT[o.mat] || MAT.gib;
@@ -3054,7 +3090,7 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
       hidden: !!o.hidden,
       keep: !!o.keep, t: 0
     };
-    if (P.length > PMAX) P.shift();
+    if (P.length >= PMAX) P.shift();
     P.push(b);
     return b;
   }
@@ -3113,7 +3149,9 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
   }
 
   function physUpdate(dt) {
-    var steps = Math.min(4, Math.max(1, Math.round(dt / PHYS_STEP)));
+    // Bodies are cosmetic debris; halve their substeps on struggling devices.
+    var stepSize = PERF.ambientTier === 0 ? PHYS_STEP : 1 / 60;
+    var steps = Math.min(4, Math.max(1, Math.round(dt / stepSize)));
     var h = dt / steps;
     for (var i = P.length - 1; i >= 0; i--) {
       var b = P[i];
@@ -5455,7 +5493,8 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     trail: function () { return trail; },
     bodies: function () { return P; },
     blast: function (x, y, r, f) { physBlast(x, y, r, f); },
-    assetsLoaded: function () { return loaded === totalAssets; }
+    assetsLoaded: function () { return loaded === totalAssets; },
+    performance: function () { return { frameMs: PERF.frameMs, ambientTier: PERF.ambientTier, particleBodies: P.length }; }
   };
 
   resize();
