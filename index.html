@@ -908,7 +908,13 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
 
   // A quiet, original four-bar synth loop. Notes are scheduled ahead against
   // AudioContext time so timing stays stable even when rendering hitches.
-  var MUSIC_BEAT = 60 / 96;
+  var MUSIC_BEAT = 60 / 96, TITLE_MUSIC_BEAT = 60 / 68;
+  var musicTheme = 'game';
+  function isTitleMusicMode() {
+    return STATE.mode === 'title' || STATE.mode === 'select' || STATE.mode === 'maps' ||
+      (STATE.mode === 'options' && STATE.optionsFrom !== 'pause') ||
+      (STATE.mode === 'armory' && STATE.armoryFrom !== 'pause' && STATE.armoryFrom !== 'play');
+  }
   function musicNote(freq, at, dur, vol, wave, cutoff) {
     if (!actx || !musicBus) return;
     var o = actx.createOscillator(), f = actx.createBiquadFilter(), g = actx.createGain();
@@ -941,6 +947,22 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
   }
   function scheduleMusicBeat(at, beat) {
     var bar = Math.floor(beat / 4) % 4, inBar = beat % 4;
+    if (isTitleMusicMode()) {
+      // The title has its own slow, percussion-free horror cue: dissonant
+      // tritone drones, long tails, and only two isolated high notes per loop.
+      var droneRoots = [73.42, 77.78, 65.41, 58.27];
+      var droneTensions = [103.83, 116.54, 92.50, 82.41];
+      if (inBar === 0) {
+        musicNote(droneRoots[bar], at, 3.15, 0.075, 'sine', 260);
+        musicNote(droneTensions[bar], at, 2.75, 0.028, 'triangle', 420);
+      }
+      if (beat % 8 === 5) {
+        var eerieNotes = [293.66, 277.18, 311.13, 261.63];
+        musicNote(eerieNotes[bar], at, 1.15, 0.026, 'triangle', 680);
+        musicNote(eerieNotes[bar] * 1.006, at + 0.29, 0.72, 0.012, 'sine', 840);
+      }
+      return;
+    }
     var roots = [73.42, 58.27, 87.31, 65.41]; // Dm / Bb / F / C
     var root = roots[bar];
     if (inBar === 0) {
@@ -961,22 +983,29 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     }
   }
   function musicTarget() {
-    if (!actx || !musicBus || !OPTS || !OPTS.music || document.hidden) return 0;
+    if (!actx || !musicBus || !OPTS || !OPTS.music || !OPTS.musicVol || document.hidden) return 0;
+    var level = clamp(OPTS.musicVol, 0, 10) / 10;
     if (STATE.mode === 'win') {
-      if (STATE.level === DATA.levels.length - 1 && winPresentation.elapsed < 2.20) return 0.055;
-      return 0.42;
+      if (STATE.level === DATA.levels.length - 1 && winPresentation.elapsed < 2.20) return 0.055 * level;
+      return 0.42 * level;
     }
-    if (STATE.mode === 'gameover') return STATE.t - gameOverStartedAt < 1.15 ? 0.07 : 0.24;
-    if (STATE.mode === 'play') return 0.46;
-    if (STATE.mode === 'pause') return 0.22;
-    if (STATE.mode === 'options' || STATE.mode === 'armory') return 0.26;
-    return 0.34;
+    if (STATE.mode === 'gameover') return (STATE.t - gameOverStartedAt < 1.15 ? 0.07 : 0.24) * level;
+    if (STATE.mode === 'play') return 0.46 * level;
+    if (STATE.mode === 'pause') return 0.22 * level;
+    if (isTitleMusicMode()) return 0.40 * level;
+    return 0.26 * level;
   }
   function syncMusic() {
     if (!actx || !musicBus) return;
-    var enabled = !!(OPTS && OPTS.music);
+    var enabled = !!(OPTS && OPTS.music && OPTS.musicVol > 0);
     if (enabled && !musicWasEnabled) musicNextTime = actx.currentTime + 0.06;
     musicWasEnabled = enabled;
+    var theme = isTitleMusicMode() ? 'title' : 'game';
+    if (theme !== musicTheme) {
+      musicTheme = theme;
+      musicBeat = 0;
+      musicNextTime = actx.currentTime + 0.06;
+    }
     var target = musicTarget();
     if (Math.abs(target - musicLastTarget) > 0.005) {
       musicBus.gain.setTargetAtTime(target, actx.currentTime, target < musicLastTarget ? 0.20 : 0.65);
@@ -986,14 +1015,14 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
   function updateMusic() {
     if (!actx || !musicBus) return;
     syncMusic();
-    if (!OPTS.music || document.hidden) return;
+    if (!OPTS.music || !OPTS.musicVol || document.hidden) return;
     var t = actx.currentTime;
     if (t - musicNextTime > 1.25) musicNextTime = t + 0.04;
     var guard = 0;
     while (musicNextTime <= t + 0.18 && guard++ < 4) {
       scheduleMusicBeat(musicNextTime, musicBeat);
       musicBeat = (musicBeat + 1) % 16;
-      musicNextTime += MUSIC_BEAT;
+      musicNextTime += musicTheme === 'title' ? TITLE_MUSIC_BEAT : MUSIC_BEAT;
     }
   }
 
@@ -3197,7 +3226,7 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     return false;
   }
 
-  var OPT_DEF = { vol: 8, music: 1, sfx: 1, shake: 2, pads: 'auto', diff: 'survivor' };
+  var OPT_DEF = { vol: 8, music: 1, musicVol: 10, sfx: 1, shake: 2, pads: 'auto', diff: 'survivor' };
   var OPTS = (function () {
     var o = {}, k;
     for (k in OPT_DEF) o[k] = OPT_DEF[k];
@@ -4436,8 +4465,8 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
   }
 
   /* ========================================================== OPTIONS ===== */
-  var ROW_W = 0, ROW_H = 15;
-  function optRow(i) { return { x: Math.round(L.cx - ROW_W / 2), y: 26 + i * 16, w: ROW_W, h: ROW_H }; }
+  var ROW_W = 0, ROW_H = 14;
+  function optRow(i) { return { x: Math.round(L.cx - ROW_W / 2), y: 27 + i * 14, w: ROW_W, h: ROW_H }; }
 
   function drawOptions() {
     layout();
@@ -4451,7 +4480,7 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     ctx.fillRect(Math.round(L.cx - 40), 5 + 7 * tsc + 3, 80, 1);
     var sl = uiSlideIn(0);
     ctx.globalAlpha = sl.a;
-    var panelH = 9 * 16 + 6;
+    var panelH = 10 * 14 + 6;
 
     // rows
     var r0 = optRow(0);
@@ -4478,18 +4507,32 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
       uiToggle({ id: 'o_music_t', x: r.x + r.w - 54, y: r.y + 3, on: !!OPTS.music, act: toggleMusic });
     })();
 
-    // 2 - sound effects
+    // 2 - background music level (separate from the master volume)
     (function () {
       var r = optRow(2);
+      var musicSet = function (v) {
+        OPTS.musicVol = clamp(Math.round(v), 0, 10);
+        applyOpts(); saveOpts(); sfx('ui');
+      };
+      uiRow({ id: 'o_music_vol', x: r.x, y: r.y, w: r.w, h: r.h, label: 'MUSIC VOLUME',
+              act: function () { musicSet(OPTS.musicVol + 1); },
+              adj: function (d) { musicSet(OPTS.musicVol + (d > 0 ? 1 : -1)); } });
+      uiSlider({ id: 'o_music_vol_s', x: r.x + r.w - 96, y: r.y + 4, w: 64,
+                 value: OPTS.musicVol, max: 10, set: musicSet });
+    })();
+
+    // 3 - sound effects
+    (function () {
+      var r = optRow(3);
       uiRow({ id: 'o_sfx', x: r.x, y: r.y, w: r.w, h: r.h, label: 'SOUND EFFECTS',
               act: function () { OPTS.sfx = OPTS.sfx ? 0 : 1; applyOpts(); saveOpts(); sfx('ui'); } });
       uiToggle({ id: 'o_sfx_t', x: r.x + r.w - 54, y: r.y + 3, on: !!OPTS.sfx,
                  act: function () { OPTS.sfx = OPTS.sfx ? 0 : 1; applyOpts(); saveOpts(); sfx('ui'); } });
     })();
 
-    // 3 - screen shake
+    // 4 - screen shake
     (function () {
-      var r = optRow(3);
+      var r = optRow(4);
       var names = ['OFF', 'LOW', 'HIGH'];
       uiRow({ id: 'o_shake', x: r.x, y: r.y, w: r.w, h: r.h, label: 'SCREEN SHAKE',
               value: names[OPTS.shake] || 'HIGH',
@@ -4497,9 +4540,9 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
               adj: function (d) { OPTS.shake = (OPTS.shake + (d > 0 ? 1 : 2)) % 3; saveOpts(); sfx('ui'); } });
     })();
 
-    // 4 - difficulty
+    // 5 - difficulty
     (function () {
-      var r = optRow(4);
+      var r = optRow(5);
       var dnames = Object.keys(DIFFS);
       uiRow({ id: 'o_diff', x: r.x, y: r.y, w: r.w, h: r.h, label: 'DIFFICULTY',
               value: String(OPTS.diff).toUpperCase(),
@@ -4513,9 +4556,9 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
       }
     })();
 
-    // 5 - touch pads
+    // 6 - touch pads
     (function () {
-      var r = optRow(5);
+      var r = optRow(6);
       var nm = { auto: 'AUTO', on: 'ON', off: 'OFF' };
       uiRow({ id: 'o_pads', x: r.x, y: r.y, w: r.w, h: r.h, label: 'TOUCH PADS',
               value: nm[OPTS.pads] || 'AUTO',
@@ -4523,16 +4566,16 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
               adj: function (d) { cyclePads(d); } });
     })();
 
-    // 6 - fullscreen
+    // 7 - fullscreen
     (function () {
-      var r = optRow(6);
+      var r = optRow(7);
       uiRow({ id: 'o_fs', x: r.x, y: r.y, w: r.w, h: r.h, label: 'FULLSCREEN',
               value: 'TAP', act: function () { toggleFullscreen(); } });
     })();
 
-    // 7 - reset best (two-step confirm)
+    // 8 - reset best (two-step confirm)
     (function () {
-      var r = optRow(7);
+      var r = optRow(8);
       var armed = UI.t - (UI.anim['resetAt'] || -9) < 2.6;
       uiRow({ id: 'o_reset', x: r.x, y: r.y, w: r.w, h: r.h, kind: 'danger',
               label: armed ? 'CONFIRM RESET?' : 'RESET BEST SCORE',
@@ -4547,10 +4590,10 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
               } });
     })();
 
-    // 8 - back
+    // 9 - back
     (function () {
-      var r = optRow(8);
-      uiButton({ id: 'o_back', x: Math.round(L.cx - 44), y: r.y, w: 88, h: 16,
+      var r = optRow(9);
+      uiButton({ id: 'o_back', x: Math.round(L.cx - 44), y: r.y, w: 88, h: 14,
                  label: 'BACK', icon: 'back', act: function () { closeOptions(); } });
     })();
 
