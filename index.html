@@ -4038,13 +4038,16 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     ctx.globalAlpha = sl.a * blink;
     uiTxt(T.active ? 'TAP DEPLOY TO BEGIN' : 'PRESS ENTER TO DEPLOY', L.cx, y + 3, '#f2c76a', 1, 'center');
     ctx.globalAlpha = sl.a;
+    // Keep the creator credit between the deploy hint and the bottom status line.
+    uiTxt(uiFit('CREATED BY DEMZ07 (DAVE QUIBRAL PETALLANO)', VW - 8),
+          L.cx, VH - 18, '#b7aa96', 1, 'center');
     var clrCount = Object.keys(SAVE.cleared || {}).length;
     uiTxt('BEST ' + STATE.best + '   CLEARED ' + clrCount + '/20',
           L.cx, VH - 9, '#857f74', 1, 'center');
     ctx.globalAlpha = 1;
 
     if (loaded < totalAssets) {
-      uiTxt('LOADING ' + Math.floor(loaded / totalAssets * 100) + '%', L.cx, VH - 20, '#e2513c', 1, 'center');
+      uiTxt('LOADING ' + Math.floor(loaded / totalAssets * 100) + '%', L.cx, VH - 28, '#e2513c', 1, 'center');
     }
   }
 
