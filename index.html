@@ -3966,10 +3966,48 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
   }
 
   /* ====================================================== TITLE SCREEN ==== */
+  function drawTitleAtmosphere() {
+    var t = UI.t;
+    var sweepX = Math.floor((t * 34) % (VW + 40)) - 20;
+
+    // A slow, low-contrast scanner gives the still title backdrop some life.
+    ctx.save();
+    ctx.globalAlpha = 0.055;
+    ctx.fillStyle = '#ef503b';
+    ctx.fillRect(sweepX - 3, 0, 7, VH);
+    ctx.globalAlpha = 0.16;
+    ctx.fillRect(sweepX, 0, 1, VH);
+
+    // Tiny signal lamps and corner brackets pulse like a damaged field display.
+    var pulse = 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(t * 2.1));
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#e2513c';
+    ctx.fillRect(8, 8, 5, 1); ctx.fillRect(8, 8, 1, 5);
+    ctx.fillRect(VW - 13, 8, 5, 1); ctx.fillRect(VW - 9, 8, 1, 5);
+    ctx.globalAlpha = 0.35 + 0.55 * (0.5 + 0.5 * Math.sin(t * 3.8));
+    ctx.fillStyle = '#f2c76a';
+    ctx.fillRect(17, 8, 2, 2);
+    ctx.globalAlpha = 0.25 + 0.65 * (0.5 + 0.5 * Math.sin(t * 3.8 + 1.7));
+    ctx.fillRect(VW - 19, 8, 2, 2);
+    ctx.restore();
+
+    // Distant infected silhouettes pace at the extreme edges, clear of the menu.
+    if (VW >= 300 && SPR.walker && ready(SPR.walker.img)) {
+      var sway = Math.sin(t * 0.55) * 4;
+      var feet = VH - 13;
+      ctx.save();
+      ctx.globalAlpha = 0.23;
+      drawChar('walker', 'walk', t * 4.5, 15 + sway, feet, false, 0.9, '#7b2925');
+      drawChar('walker', 'walk', t * 4.5 + 1, VW - 15 - sway, feet, true, 0.9, '#7b2925');
+      ctx.restore();
+    }
+  }
+
   function drawTitle() {
     layout();
     UI.defaultFocus = 'deploy';
     uiScreenBg(0.44);
+    drawTitleAtmosphere();
 
     var cls = clsByKey(STATE.cls);
     var sc = L.tsc;
@@ -3977,12 +4015,35 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
 
     drawCoinBadge(VW - 6, 4);
 
-    // logo: hard drop shadow + main face + scorched highlight
-    text('DEAD SECTOR', L.cx + 2, ty + 2, '#200708', sc, null, 'center');
-    text('DEAD SECTOR', L.cx, ty, '#e2513c', sc, '#2a0d0b', 'center');
-    ctx.globalAlpha = 0.5;
-    text('DEAD SECTOR', L.cx, ty + 1, '#f08a6a', sc, null, 'center');
-    ctx.globalAlpha = 1;
+    // The logo powers on with a small impact, then breathes almost imperceptibly.
+    var logoW = textWidth('DEAD SECTOR', sc);
+    var logoIn = clamp(UI.screenT / 0.42, 0, 1);
+    logoIn = 1 - Math.pow(1 - logoIn, 3);
+    var logoPulse = 1 + 0.012 * Math.sin(UI.t * 1.45);
+    var logoScale = (0.90 + 0.10 * logoIn) * logoPulse;
+    ctx.save();
+    ctx.translate(L.cx, ty + 3.5 * sc);
+    ctx.scale(logoScale, logoScale);
+    ctx.globalAlpha = logoIn;
+    text('DEAD SECTOR', 2, -3.5 * sc + 2, '#200708', sc, null, 'center');
+    text('DEAD SECTOR', 0, -3.5 * sc, '#e2513c', sc, '#2a0d0b', 'center');
+    ctx.globalAlpha = 0.5 * logoIn;
+    text('DEAD SECTOR', 0, -3.5 * sc + 1, '#f08a6a', sc, null, 'center');
+    ctx.restore();
+
+    // A narrow glint periodically sweeps across the pixel lettering.
+    var logoLeft = L.cx - logoW / 2;
+    var glintX = logoLeft + ((UI.t * 32) % (logoW + 150)) - 75;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(Math.round(logoLeft), ty, Math.ceil(logoW), 7 * sc);
+    ctx.clip();
+    ctx.globalAlpha = 0.12 * logoIn;
+    ctx.fillStyle = '#ffb27a';
+    ctx.fillRect(Math.round(glintX - 2), ty, 5, 7 * sc);
+    ctx.globalAlpha = 0.25 * logoIn;
+    ctx.fillRect(Math.round(glintX), ty, 1, 7 * sc);
+    ctx.restore();
 
     var subY = ty + 7 * sc + 2;
     uiTxt('20 SECTORS  //  ' + cls.name + ' READY', L.cx, subY, '#c9c2b2', 1, 'center');
