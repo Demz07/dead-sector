@@ -3990,17 +3990,6 @@ window.__F__ = {"A":"01110/10001/10001/11111/10001/10001/10001","B":"11110/10001
     ctx.globalAlpha = 0.25 + 0.65 * (0.5 + 0.5 * Math.sin(t * 3.8 + 1.7));
     ctx.fillRect(VW - 19, 8, 2, 2);
     ctx.restore();
-
-    // Distant infected silhouettes pace at the extreme edges, clear of the menu.
-    if (VW >= 300 && SPR.walker && ready(SPR.walker.img)) {
-      var sway = Math.sin(t * 0.55) * 4;
-      var feet = VH - 13;
-      ctx.save();
-      ctx.globalAlpha = 0.23;
-      drawChar('walker', 'walk', t * 4.5, 15 + sway, feet, false, 0.9, '#7b2925');
-      drawChar('walker', 'walk', t * 4.5 + 1, VW - 15 - sway, feet, true, 0.9, '#7b2925');
-      ctx.restore();
-    }
   }
 
   function drawTitle() {
